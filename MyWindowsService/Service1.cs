@@ -18,7 +18,7 @@ namespace MyWindowsService
         string API_KEY = "N4fNwt5LzCNa1hX88nPI93hZ";
         string SECRET_KEY = "VKxr1FROhueYGesXk0pomr2YVRu0jyZG";
         
-        private static FileStream F = new FileStream(@"D:\baiduLog.txt",
+        private static FileStream F = new FileStream(@"D:\baidu_serviceLog.txt",
                 FileMode.OpenOrCreate, FileAccess.ReadWrite);
         StreamWriter sw = new StreamWriter(F);
         public Service1()
@@ -28,21 +28,15 @@ namespace MyWindowsService
 
         protected override void OnStart(string[] args)
         {
-
-
-
+            
             //开启定时任务
-
             System.Timers.Timer timer = new System.Timers.Timer();
             timer.Enabled = true;
             timer.Interval = 1000;//执行间隔时间,单位为毫秒    
             timer.Start();
             timer.Elapsed += new System.Timers.ElapsedEventHandler(Timer1_Elapsed);
 
-
-
-
-
+            
         }
 
         protected override void OnStop()
@@ -56,17 +50,13 @@ namespace MyWindowsService
             int intMinute = e.SignalTime.Minute;
             int intSecond = e.SignalTime.Second;
 
-            if (intHour == 9 && intMinute == 50 && intSecond == 10)
+            if (intHour ==23  && intMinute == 50 && intSecond == 10)
             {
 
-
-
-
-
-
-
-
-
+                sw.WriteLine(DateTime.Now + "开始处理定时任务");
+                //先处理历史工作
+                HistoryWork();
+                
                 //获取当天更新的所有产品
                 string dete = DateTime.Now.ToString("yyyy-MM-dd");
 
@@ -79,27 +69,50 @@ namespace MyWindowsService
                 };
 
 
-                //F.Close();
 
                 DataTable dt = SqlHelper.SqlHelper.ExcuteDataTable(sqltext, parameters);
                 foreach (DataRow item in dt.Rows)
                 {
                     //拼接上传路径
-                    string path = @"D:\Dious_img" + item["fsimplepicfile"].ToString();
+                    string path = @"D:\Dious_img\" + item["fsimplepicfile"].ToString();
                     //拿到品号获取cont_sign将之前的图片从百度图库删除
                     string sql = "select * from BaiduUpload_info where fGoodsCode=@fGoodsCode";
 
                     SqlParameter[] parm = new SqlParameter[]
                 {
-                    new SqlParameter("@fGoodsCode",dete)
+                    new SqlParameter("@fGoodsCode",item["fGoodsCode"].ToString())
 
                 };
                     DataTable DT = SqlHelper.SqlHelper.ExcuteDataTable(sql, parm);
                     try
                     {
-                        string cont_sign = DT.Rows[0]["cont_sign"].ToString();
-                        //删除百度图库，上传并更新数据库
-                        handle(cont_sign, path, item["fGoodsCode"].ToString());
+                        string cont_sign;
+                        if (DT.Rows.Count > 0)
+                        {
+                         cont_sign = DT.Rows[0]["cont_sign"].ToString();
+                            //删除百度图库，上传并更新数据库
+                            handle(cont_sign, path, item["fGoodsCode"].ToString());
+                        }
+                        else
+                        {
+
+                            string sql_text = "insert into BaiduUpload_service values(@id,@fGoodsCode,@path,@workDate)";
+
+                            SqlParameter[] parms = new SqlParameter[]
+                            {
+                            new SqlParameter("@id",Guid.NewGuid().ToString()),
+                             new SqlParameter("@fGoodsCode",item["fGoodsCode"].ToString()),
+                               new SqlParameter("@path", path),
+                                new SqlParameter("@workDate",DateTime.Now)
+
+                             };
+                            int count = SqlHelper.SqlHelper.ExcuteNonQuery(sql_text, parms);
+
+                            sw.WriteLine(item["fGoodsCode"].ToString() + "在原数据库中未找到！已记录row："+count);
+
+                        }
+                           
+                        
 
                     }
                     catch (Exception EX)
@@ -130,18 +143,11 @@ namespace MyWindowsService
 
                         sw.WriteLine("出现异常：" + EX.StackTrace);
                     }
-
-
-
-
-
-
-
-
-
-
+                    
 
                 }
+
+                sw.WriteLine("全部更新完成处理" + dt.Rows.Count + "条数据 处理结束时间" + DateTime.Now);
 
                 sw.Close();
                 F.Close();
@@ -251,7 +257,8 @@ namespace MyWindowsService
 
           
             //找出所有历史任务
-            string sql = "select * from BaiduUpload_service";
+            string sql = "select * from BaiduUpload_service where path<>''";
+
             var client = new Baidu.Aip.ImageSearch.ImageSearch(API_KEY, SECRET_KEY);
             DataTable dt = SqlHelper.SqlHelper.ExcuteDataTable(sql);
             foreach(DataRow item in dt.Rows)
@@ -275,8 +282,7 @@ namespace MyWindowsService
                         int count = SqlHelper.SqlHelper.ExcuteNonQuery(sql2, parameters2);
                         if (count > 0)
                         {
-                            sw.WriteLine("成功更新历史任务 品号：" + item["fGoodsCode"].ToString());
-
+                            sw.WriteLine("成功更新历史任务 品号：" + item["fGoodsCode"].ToString()+"--时间："+DateTime.Now);
                             string sql_deltete = "delete  from BaiduUpload_service where  fGoodsCode=@fGoodsCode";
                             SqlParameter[] parameters3 = new SqlParameter[] {
 
@@ -287,7 +293,7 @@ namespace MyWindowsService
                         }
                         else
                         {
-                            sw.WriteLine("更新历史任务失败 品号：" + item["fGoodsCode"].ToString());
+                            sw.WriteLine("更新历史任务失败 品号：" + item["fGoodsCode"].ToString() + "--时间：" + DateTime.Now);
                         }
 
                     }
@@ -302,7 +308,7 @@ namespace MyWindowsService
 
 
 
-
+            sw.WriteLine("处理历史" + dt.Rows.Count + "个"+DateTime.Now);
 
 
 
