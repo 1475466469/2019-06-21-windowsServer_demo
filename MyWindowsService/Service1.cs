@@ -17,9 +17,10 @@ namespace MyWindowsService
     {
         string API_KEY = "N4fNwt5LzCNa1hX88nPI93hZ";
         string SECRET_KEY = "VKxr1FROhueYGesXk0pomr2YVRu0jyZG";
-       private static FileStream F = new FileStream(@"D:\baiduLog.txt",
-               FileMode.OpenOrCreate, FileAccess.ReadWrite);
-       StreamWriter sw = new StreamWriter(F);
+        
+        private static FileStream F = new FileStream(@"D:\baiduLog.txt",
+                FileMode.OpenOrCreate, FileAccess.ReadWrite);
+        StreamWriter sw = new StreamWriter(F);
         public Service1()
         {
             InitializeComponent();
@@ -28,7 +29,7 @@ namespace MyWindowsService
         protected override void OnStart(string[] args)
         {
 
-            
+
 
             //开启定时任务
 
@@ -38,10 +39,10 @@ namespace MyWindowsService
             timer.Start();
             timer.Elapsed += new System.Timers.ElapsedEventHandler(Timer1_Elapsed);
 
-          
 
-           
-           
+
+
+
         }
 
         protected override void OnStop()
@@ -58,25 +59,33 @@ namespace MyWindowsService
             if (intHour == 9 && intMinute == 50 && intSecond == 10)
             {
 
+
+
+
+
+
+
+
+
                 //获取当天更新的所有产品
                 string dete = DateTime.Now.ToString("yyyy-MM-dd");
 
-                string sqltext = "select  fGoodsCode,fsimplepicfile from  t_BOMM_GoodsMst where (fCDate>@Date or fModiDate>@Date ) and (fsimplepicfile is not null and fsimplepicfile<>'')";
+                string sqltext = "select  fGoodsCode,fsimplepicfile from  t_BOMM_GoodsMst where fDevProperty<>'2'and  (fCDate>@Date or fModiDate>@Date ) and (fsimplepicfile is not null and fsimplepicfile<>'')";
 
                 SqlParameter[] parameters = new SqlParameter[]
                 {
                     new SqlParameter("@Date",dete)
 
                 };
-               
+
 
                 //F.Close();
 
-                DataTable dt = SqlHelper.SqlHelper.ExcuteDataTable(sqltext,parameters);
-                foreach(DataRow item  in dt.Rows)
+                DataTable dt = SqlHelper.SqlHelper.ExcuteDataTable(sqltext, parameters);
+                foreach (DataRow item in dt.Rows)
                 {
                     //拼接上传路径
-                    string path = @"D:\fgstamp" + item["fsimplepicfile"].ToString();
+                    string path = @"D:\Dious_img" + item["fsimplepicfile"].ToString();
                     //拿到品号获取cont_sign将之前的图片从百度图库删除
                     string sql = "select * from BaiduUpload_info where fGoodsCode=@fGoodsCode";
 
@@ -85,20 +94,43 @@ namespace MyWindowsService
                     new SqlParameter("@fGoodsCode",dete)
 
                 };
-                   DataTable DT= SqlHelper.SqlHelper.ExcuteDataTable(sql, parm);
+                    DataTable DT = SqlHelper.SqlHelper.ExcuteDataTable(sql, parm);
                     try
                     {
                         string cont_sign = DT.Rows[0]["cont_sign"].ToString();
                         //删除百度图库，上传并更新数据库
                         handle(cont_sign, path, item["fGoodsCode"].ToString());
-                        
+
                     }
-                    catch(Exception EX)
+                    catch (Exception EX)
                     {
+
+                        //文件找不到写入数据库
+
+                        string sql_text = "insert into BaiduUpload_service values(@id,@fGoodsCode,@path,@workDate)";
+
+                        SqlParameter[] parms = new SqlParameter[]
+                        {
+                            new SqlParameter("@id",Guid.NewGuid().ToString()),
+                             new SqlParameter("@fGoodsCode",item["fGoodsCode"].ToString()),
+                               new SqlParameter("@path", path),
+                                new SqlParameter("@workDate",DateTime.Now)
+
+                         };
+                        int count = SqlHelper.SqlHelper.ExcuteNonQuery(sql_text, parms);
+
+                        if (count > 0)
+                        {
+                            sw.WriteLine(item["fGoodsCode"].ToString() + "没有找到图片文件插入到数据库");
+                        }
+                        else
+                        {
+                            sw.WriteLine(item["fGoodsCode"].ToString() + "没有找到图片文件插入到数据库失败");
+                        }
 
                         sw.WriteLine("出现异常：" + EX.StackTrace);
                     }
-                    
+
 
 
 
@@ -117,94 +149,173 @@ namespace MyWindowsService
 
 
             };
-            
+
 
         }
 
 
-        private void handle(string contSign,string path,string fGoodsCode)
+        private void handle(string contSign, string path, string fGoodsCode)
         {
-            
-            try
-            {
 
-                //删除百度
-                var client = new Baidu.Aip.ImageSearch.ImageSearch(API_KEY, SECRET_KEY);
-                var result = client.ProductDeleteBySign(contSign);
-                //上传百度
-               
-                var image = File.ReadAllBytes(path);
 
-                // 如果有可选参数
-                var options = new Dictionary<string, object>{
+            //删除百度
+            var client = new Baidu.Aip.ImageSearch.ImageSearch(API_KEY, SECRET_KEY);
+
+            var result = client.ProductDeleteBySign(contSign);
+            //上传百度
+
+            var image = File.ReadAllBytes(path);
+
+            // 如果有可选参数
+            var options = new Dictionary<string, object>{
                         {"brief", "{\"fGoodsCode\":\""+fGoodsCode+"\"}"},
                          {"url",path }
                 };
-                var res = client.ProductAdd(image, options);
-                if (res.Count == 2)
-                {
+            var res = client.ProductAdd(image, options);
 
-                   
 
-                    //上传成功更新数据库
 
-                    string sql2 = "update  BaiduUpload_info set cont_sign=@cont_sign where fGoodsCode=@fGoodsCode";
-                    SqlParameter[] parameters2 = new SqlParameter[] {
+
+
+
+
+
+
+
+            if (res.Count == 2)
+            {
+
+                //上传成功更新数据库
+
+                string sql2 = "update  BaiduUpload_info set cont_sign=@cont_sign where fGoodsCode=@fGoodsCode";
+                SqlParameter[] parameters2 = new SqlParameter[] {
                          new SqlParameter("@cont_sign",res["cont_sign"].ToString()),
 
                          new SqlParameter("@fGoodsCode",fGoodsCode)
 
                                   };
-              int count= SqlHelper.SqlHelper.ExcuteNonQuery(sql2, parameters2);
-                    if (count > 0)
-                    {
-                        sw.WriteLine(fGoodsCode + "更新成功"+ DateTime.Now.ToString("yyyy-MM-dd"));
-                    }
-                    else
-                    {
+                int count = SqlHelper.SqlHelper.ExcuteNonQuery(sql2, parameters2);
+                if (count > 0)
+                {
+                    sw.WriteLine(fGoodsCode + "更新成功" + DateTime.Now.ToString("yyyy-MM-dd"));
+                }
+                else
+                {
 
-                        string sql3 = "insert into  BaiduUpload_info values(@fGoodsCode,@cont_sign)";
-                        SqlParameter[] p = new SqlParameter[] {
+                    string sql3 = "insert into  BaiduUpload_info values(@fGoodsCode,@cont_sign)";
+                    SqlParameter[] p = new SqlParameter[] {
                          new SqlParameter("@cont_sign",res["cont_sign"].ToString()),
                          new SqlParameter("@fGoodsCode",fGoodsCode) };
-                        int row = SqlHelper.SqlHelper.ExcuteNonQuery(sql3, p);
-                        if (row > 0)
-                        {
-                            sw.WriteLine(fGoodsCode + "新增成功" + DateTime.Now.ToString("yyyy-MM-dd"));
-
-                        }
-
+                    int row = SqlHelper.SqlHelper.ExcuteNonQuery(sql3, p);
+                    if (row > 0)
+                    {
+                        sw.WriteLine(fGoodsCode + "新增成功" + DateTime.Now.ToString("yyyy-MM-dd"));
 
                     }
 
 
-
-
-
                 }
-
-
-
-
-
-
-
+                
 
             }
-                    catch (Exception EX)
-                    {
-                        Console.WriteLine(EX);
-                        Console.WriteLine("--------删除失败----------");
-                    }
+            else
+            {
 
+                string error = res["error_code"].ToString();
+                string id = Guid.NewGuid().ToString();
+                string sql_text = "insert into BaiduUpload_err values(@id,@fGoodSCode,@flieName,@cont_same,@upLoadDate,@err_Code)";
 
-               
-
-
-
-
+                SqlParameter[] parameters = new SqlParameter[] {
+                                 new SqlParameter("@id",id),
+                                 new SqlParameter("@fGoodSCode",fGoodsCode),
+                                new SqlParameter("@flieName",path),
+                                 new SqlParameter("@cont_same",res["cont_sign"].ToString()),
+                                 new SqlParameter("@upLoadDate",DateTime.Now),
+                                 new SqlParameter("@err_Code",error),
+                                      };
+                int count = SqlHelper.SqlHelper.ExcuteNonQuery(sql_text, parameters);
+                if (count > 0)
+                {
+                    sw.WriteLine(fGoodsCode + "更新失败" + DateTime.Now);
                 }
-             
+                
+
+            }
+            
+
+        }
+
+        //处理历史没完成的任务
+        public void HistoryWork()
+        {
+
+          
+            //找出所有历史任务
+            string sql = "select * from BaiduUpload_service";
+            var client = new Baidu.Aip.ImageSearch.ImageSearch(API_KEY, SECRET_KEY);
+            DataTable dt = SqlHelper.SqlHelper.ExcuteDataTable(sql);
+            foreach(DataRow item in dt.Rows)
+            {
+                try
+                {
+                    var image = File.ReadAllBytes(item["path"].ToString());
+                    var options = new Dictionary<string, object>{
+                        {"brief", "{\"fGoodsCode\":\""+item["fGoodsCode"].ToString()+"\"}"},
+                         {"url",item["path"].ToString() }
+                };
+                    var res = client.ProductAdd(image, options);
+                    if (res.Count == 2)
+                    {
+                        //上传成功
+                        string sql2 = "update  BaiduUpload_info set cont_sign=@cont_sign where fGoodsCode=@fGoodsCode";
+                        SqlParameter[] parameters2 = new SqlParameter[] {
+                         new SqlParameter("@cont_sign",res["cont_sign"].ToString()),
+                         new SqlParameter("@fGoodsCode",item["fGoodsCode"].ToString())
+                                  };
+                        int count = SqlHelper.SqlHelper.ExcuteNonQuery(sql2, parameters2);
+                        if (count > 0)
+                        {
+                            sw.WriteLine("成功更新历史任务 品号：" + item["fGoodsCode"].ToString());
+
+                            string sql_deltete = "delete  from BaiduUpload_service where  fGoodsCode=@fGoodsCode";
+                            SqlParameter[] parameters3 = new SqlParameter[] {
+
+                                 new SqlParameter("@fGoodsCode",item["fGoodsCode"].ToString())
+                            };
+                            SqlHelper.SqlHelper.ExcuteNonQuery(sql_deltete, parameters3);
+
+                        }
+                        else
+                        {
+                            sw.WriteLine("更新历史任务失败 品号：" + item["fGoodsCode"].ToString());
+                        }
+
+                    }
+                }
+                catch (Exception ex)
+                {
+
+                    sw.WriteLine("处理历史任务出现异常" + ex.StackTrace);
+                }
+
+            }
+
+
+
+
+
+
+
+
+
+        }
+
+
+
+
+
+    
+
 
 
 
