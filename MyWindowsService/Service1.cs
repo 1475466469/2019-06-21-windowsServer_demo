@@ -19,7 +19,8 @@ namespace MyWindowsService
         string SECRET_KEY = "VKxr1FROhueYGesXk0pomr2YVRu0jyZG";
         
         private static FileStream F = new FileStream(@"D:\baidu_serviceLog.txt",
-                FileMode.OpenOrCreate, FileAccess.ReadWrite);
+                FileMode.Append
+            );
         StreamWriter sw = new StreamWriter(F);
         public Service1()
         {
@@ -41,34 +42,33 @@ namespace MyWindowsService
 
         protected override void OnStop()
         {
+
+            sw.WriteLine("终止程序");
+            sw.Close();
+            F.Close();
         }
         private void Timer1_Elapsed(object sender, System.Timers.ElapsedEventArgs e)
         {
 
-            // 得到intHour,intMinute,intSecond，是当前系统时间    
+       
             int intHour = e.SignalTime.Hour;
             int intMinute = e.SignalTime.Minute;
             int intSecond = e.SignalTime.Second;
 
-            if (intHour ==23  && intMinute == 50 && intSecond == 10)
+            if (intHour ==22  && intMinute == 01 && intSecond == 10)
             {
 
                 sw.WriteLine(DateTime.Now + "开始处理定时任务");
                 //先处理历史工作
                 HistoryWork();
-                
                 //获取当天更新的所有产品
                 string dete = DateTime.Now.ToString("yyyy-MM-dd");
-
                 string sqltext = "select  fGoodsCode,fsimplepicfile from  t_BOMM_GoodsMst where fDevProperty<>'2'and  (fCDate>@Date or fModiDate>@Date ) and (fsimplepicfile is not null and fsimplepicfile<>'')";
-
                 SqlParameter[] parameters = new SqlParameter[]
                 {
                     new SqlParameter("@Date",dete)
 
                 };
-
-
 
                 DataTable dt = SqlHelper.SqlHelper.ExcuteDataTable(sqltext, parameters);
                 foreach (DataRow item in dt.Rows)
@@ -112,7 +112,6 @@ namespace MyWindowsService
 
                         }
                            
-                        
 
                     }
                     catch (Exception EX)
@@ -128,7 +127,6 @@ namespace MyWindowsService
                              new SqlParameter("@fGoodsCode",item["fGoodsCode"].ToString()),
                                new SqlParameter("@path", path),
                                 new SqlParameter("@workDate",DateTime.Now)
-
                          };
                         int count = SqlHelper.SqlHelper.ExcuteNonQuery(sql_text, parms);
 
@@ -141,9 +139,11 @@ namespace MyWindowsService
                             sw.WriteLine(item["fGoodsCode"].ToString() + "没有找到图片文件插入到数据库失败");
                         }
 
-                        sw.WriteLine("出现异常：" + EX.StackTrace);
+                        sw.WriteLine("出现异常：" + EX.Message);
                     }
-                    
+
+                    System.Threading.Thread.Sleep(500);
+
 
                 }
 
@@ -179,15 +179,7 @@ namespace MyWindowsService
                 };
             var res = client.ProductAdd(image, options);
 
-
-
-
-
-
-
-
-
-
+            
             if (res.Count == 2)
             {
 
@@ -266,7 +258,7 @@ namespace MyWindowsService
                 try
                 {
                     var image = File.ReadAllBytes(item["path"].ToString());
-                    var options = new Dictionary<string, object>{
+                    Dictionary<string, object> options = new Dictionary<string, object>{
                         {"brief", "{\"fGoodsCode\":\""+item["fGoodsCode"].ToString()+"\"}"},
                          {"url",item["path"].ToString() }
                 };
@@ -280,6 +272,7 @@ namespace MyWindowsService
                          new SqlParameter("@fGoodsCode",item["fGoodsCode"].ToString())
                                   };
                         int count = SqlHelper.SqlHelper.ExcuteNonQuery(sql2, parameters2);
+                        
                         if (count > 0)
                         {
                             sw.WriteLine("成功更新历史任务 品号：" + item["fGoodsCode"].ToString()+"--时间："+DateTime.Now);
@@ -297,12 +290,55 @@ namespace MyWindowsService
                         }
 
                     }
+                    else
+                    {
+                        //报错
+                        string error = res["error_code"].ToString();
+                        string id = Guid.NewGuid().ToString();
+                        string sql_text = "insert into BaiduUpload_err values(@id,@fGoodSCode,@flieName,@cont_same,@upLoadDate,@err_Code)";
+
+                        SqlParameter[] parameters = new SqlParameter[] {
+                                 new SqlParameter("@id",id),
+                                 new SqlParameter("@fGoodSCode",item["fGoodsCode"].ToString()),
+                                new SqlParameter("@flieName",item["path"].ToString()),
+                                 new SqlParameter("@cont_same",res["cont_sign"].ToString()),
+                                 new SqlParameter("@upLoadDate",DateTime.Now),
+                                 new SqlParameter("@err_Code",error),
+                                      };
+                        int count = SqlHelper.SqlHelper.ExcuteNonQuery(sql_text, parameters);
+
+                        string sql_deltete = "delete  from BaiduUpload_service where  fGoodsCode=@fGoodsCode";
+
+                        SqlParameter[] parameters3 = new SqlParameter[] {
+
+                                 new SqlParameter("@fGoodsCode",item["fGoodsCode"].ToString())
+                            };
+                        SqlHelper.SqlHelper.ExcuteNonQuery(sql_deltete, parameters3);
+
+                        Console.WriteLine("删除" + item["fGoodsCode"].ToString());
+
+
+
+
+                        if (count > 0)
+                        {
+                            sw.WriteLine(item["fGoodsCode"].ToString() + "更新失败状态码" + error + "时间：" + DateTime.Now);
+                        }
+                        
+
+
+                    }
                 }
                 catch (Exception ex)
                 {
 
-                    sw.WriteLine("处理历史任务出现异常" + ex.StackTrace);
+                    sw.WriteLine("处理历史任务出现异常" + ex.Message);
                 }
+
+                
+                System.Threading.Thread.Sleep(1000);
+                sw.Flush();
+                F.Flush();
 
             }
 
